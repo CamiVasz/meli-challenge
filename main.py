@@ -59,6 +59,35 @@ def get_last_week_tapped(prints_lw):
         )
     )
 
+def get_last_three_weeks_views(prints_lw):
+    # Get total views in the last 3 weeks
+    views_lw = prints.selectExpr(
+        "user_id as user_id_lw", 
+        "value_prop as value_prop_lw", 
+        "day as lw_day"
+    )
+    prints_l3w_views = (
+        prints_lw.join(
+            views_lw,
+            (views_lw["lw_day"] > prints["day"])
+            & (views_lw["lw_day"] < date_sub(prints_lw["day"], 21))
+            & (prints_lw["user_id"] == views_lw["user_id_lw"])
+            & (prints_lw["value_prop"] == views_lw["value_prop_lw"]),
+            "left",
+        )
+        .withColumn("view_last_3_weeks", col("lw_day").isNotNull().cast("int"))
+        .groupBy(col("value_prop"), col("user_id"), col("day"))
+        .sum()
+        .selectExpr(
+            "day as view_l3w_day",
+            "value_prop as view_l3w_value_prop",
+            "user_id as view_l3w_user_id",
+            "`sum(view_last_3_weeks)` as total_views_last_3_weeks",
+        )
+    )
+    return prints_l3w_views
+    
+
 def main():
     # Create a SparkSession
     spark = SparkSession.builder.appName("descubri_mas").getOrCreate()
@@ -93,6 +122,7 @@ def main():
     )
     prints_lw = get_last_week(prints)
     taps_lw = get_last_week_tapped(prints_lw)
+    views_l3w = get_last_three_weeks_views(prints_lw)
 
 if __name__=='__main__':
     main()
