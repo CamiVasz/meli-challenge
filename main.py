@@ -127,6 +127,28 @@ def get_three_week_payments(prints_lw, payments):
     )
     return number_payments
 
+def get_three_weeks_total_payments(prints_lw, payments):
+    total_of_payments = (
+        prints_lw.join(
+            payments,
+            (prints_lw["day"] > payments["pay_date"])
+            & (payments["pay_date"] < date_sub(prints_lw["day"], 21))
+            & (prints_lw["user_id"] == payments["pay_user_id"])
+            & (prints_lw["value_prop"] == payments["pay_value_prop"]),
+            "left",
+        )
+        .withColumn("total", coalesce(payments["total"].cast("float"), lit(0.0)))
+        .groupBy(col("value_prop"), col("user_id"), col("day"))
+        .sum()
+        .selectExpr(
+            "day as total_pay_day",
+            "value_prop as total_pay_value_prop",
+            "user_id as total_pay_user_id",
+            "`sum(total)` as total_payments_last_3_weeks",
+        )
+    )
+    return total_of_payments
+
 def main():
     # Create a SparkSession
     spark = SparkSession.builder.appName("descubri_mas").getOrCreate()
@@ -164,6 +186,7 @@ def main():
     views_l3w = get_last_three_weeks_views(prints, prints_lw)
     taps_l3w = get_three_weeks_taps(prints_lw, taps)
     payments_l3w = get_three_week_payments(prints_lw, payments)
+    total_payments_l3w = get_three_weeks_total_payments(prints_lw, payments)
 
 if __name__=='__main__':
     main()
