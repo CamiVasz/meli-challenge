@@ -105,7 +105,27 @@ def get_three_weeks_taps(prints_lw, taps):
                         "`sum(tap_last_3_weeks)` as total_taps_last_3_weeks",
                     )
     return prints_l3w_taps
-    
+
+def get_three_week_payments(prints_lw, payments):
+    number_payments = (
+        prints_lw.join(
+            payments,
+            (prints_lw["day"] == payments["pay_date"])
+            & (prints_lw["user_id"] == payments["pay_user_id"])
+            & (prints_lw["value_prop"] == payments["pay_value_prop"]),
+            "left",
+        )
+        .withColumn("pay", col("pay_date").isNotNull().cast("int"))
+        .groupBy(col("value_prop"), col("user_id"), col("day"))
+        .sum()
+        .selectExpr(
+            "day as pay_day",
+            "value_prop as pay_value_prop",
+            "user_id as pay_user_id",
+            "`sum(pay)` as number_payments_l3w",
+        )
+    )
+    return number_payments
 
 def main():
     # Create a SparkSession
@@ -143,6 +163,7 @@ def main():
     tapped_lw = get_last_week_tapped(prints_lw, taps)
     views_l3w = get_last_three_weeks_views(prints, prints_lw)
     taps_l3w = get_three_weeks_taps(prints_lw, taps)
+    payments_l3w = get_three_week_payments(prints_lw, payments)
 
 if __name__=='__main__':
     main()
