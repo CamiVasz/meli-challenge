@@ -32,7 +32,14 @@ def read_json(path):
     data = spark.read.json(path, schema=schema)
     return data
 
-def get_last_week(data):
+def get_last_week(prints):
+    max_day = prints.agg({"day": "max"}).collect()[0]["max(day)"]
+    # get last week from the max day
+    last_week = max_day - dt.timedelta(days=7)
+    prints_lw = prints[prints["day"] >= last_week]
+    return prints_lw
+
+def get_last_week_tapped(prints_lw):
     pass
 
 def main():
@@ -67,6 +74,7 @@ def main():
         "user_id as pay_user_id",
         "value_prop as pay_value_prop",
     )
+    prints_lw = get_last_week(prints)
 
 if __name__=='__main__':
     main()
