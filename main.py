@@ -8,6 +8,9 @@ from pyspark.sql.functions import col, avg, trunc, date_trunc, date_sub, coalesc
 from pyspark.sql.types import StructType, StructField, DateType, IntegerType, StringType
 import datetime as dt
 
+ # Create a SparkSession
+spark = SparkSession.builder.appName("descubri_mas").getOrCreate()
+
 def read_json(path):
     '''
     Read data from a JSON file using an user-defined schema.
@@ -44,8 +47,8 @@ def get_last_week_tapped(prints_lw, taps):
         prints_lw.join(
             taps,
             (prints_lw["day"] == taps["tap_day"])
-            & (prints["user_id"] == taps["tap_user_id"])
-            & (prints["value_prop"] == taps["tap_value_prop"]),
+            & (prints_lw["user_id"] == taps["tap_user_id"])
+            & (prints_lw["value_prop"] == taps["tap_value_prop"]),
             "left",
         )
         .withColumn("tap_last_week", col("tap_day").isNotNull().cast("int"))
@@ -58,6 +61,7 @@ def get_last_week_tapped(prints_lw, taps):
             "`max(tap_last_week)` as was_tapped",
         )
     )
+    return lw_taps
 
 def get_last_three_weeks_views(prints, prints_lw):
     # Get total views in the last 3 weeks
@@ -69,7 +73,7 @@ def get_last_three_weeks_views(prints, prints_lw):
     prints_l3w_views = (
         prints_lw.join(
             views_lw,
-            (views_lw["lw_day"] > prints["day"])
+            (views_lw["lw_day"] > prints_lw["day"])
             & (views_lw["lw_day"] < date_sub(prints_lw["day"], 21))
             & (prints_lw["user_id"] == views_lw["user_id_lw"])
             & (prints_lw["value_prop"] == views_lw["value_prop_lw"]),
@@ -97,7 +101,7 @@ def get_three_weeks_taps(prints_lw, taps):
                         & (prints_lw["value_prop"] == taps["tap_value_prop"]),
                         "left",)\
                     .withColumn("tap_last_3_weeks", col("tap_day").isNotNull().cast("int"))\
-                    .agroupBy(col("value_prop"), col("user_id"), col("day"))\
+                    .groupBy(col("value_prop"), col("user_id"), col("day"))\
                     .sum().selectExpr(
                         "day as tap_l3w_day",
                         "value_prop as tap_l3w_value_prop",
@@ -150,18 +154,15 @@ def get_three_weeks_total_payments(prints_lw, payments):
     return total_of_payments
 
 def main():
-    # Create a SparkSession
-    spark = SparkSession.builder.appName("descubri_mas").getOrCreate()
     # Read the JSON files
-    prints = read_json("prints.json")
+    prints = read_json("data/prints.json")
     prints = prints.select(
         col("day"),
         col("event_data.position").alias("position"),
         col("event_data.value_prop").alias("value_prop"),
         col("user_id"),
     )
-    prints.show()
-    taps = read_json("taps.json")
+    taps = read_json("data/taps.json")
     taps = taps.select(
         col("day"),
         col("event_data.position").alias("position"),
@@ -174,7 +175,7 @@ def main():
         "user_id as tap_user_id",
     )
     # read the csv file
-    payments = spark.read.csv("pays.csv", header=True)
+    payments = spark.read.csv("data/pays.csv", header=True)
     payments = payments.selectExpr(
         "pay_date",
         "total",
@@ -187,6 +188,47 @@ def main():
     taps_l3w = get_three_weeks_taps(prints_lw, taps)
     payments_l3w = get_three_week_payments(prints_lw, payments)
     total_payments_l3w = get_three_weeks_total_payments(prints_lw, payments)
+
+    # Join all the dataframes
+    data = prints_lw.join(tapped_lw, 
+                            (prints_lw["day"] == tapped_lw["lw_taps_day"])\
+                        & (prints_lw["user_id"] == tapped_lw["lw_taps_user_id"])\
+                        & (prints_lw["value_prop"] == tapped_lw["lw_taps_value_prop"]),\
+                        "left")
+    data = data.join(views_l3w,
+                        (data["day"] == views_l3w["view_l3w_day"])\
+                    & (data["user_id"] == views_l3w["view_l3w_user_id"])\
+                    & (data["value_prop"] == views_l3w["view_l3w_value_prop"]),\
+                        "left")
+    data = data.join(taps_l3w,
+                        (data["day"] == taps_l3w["tap_l3w_day"])\
+                        & (data["user_id"] == taps_l3w["tap_l3w_user_id"])\
+                        & (data["value_prop"] == taps_l3w["tap_l3w_value_prop"]),\
+                        "left")
+    data = data.join(payments_l3w,
+                        (data["day"] == payments_l3w["pay_day"])\
+                        & (data["user_id"] == payments_l3w["pay_user_id"])\
+                        & (data["value_prop"] == payments_l3w["pay_value_prop"]),\
+                        "left")
+    data = data.join(total_payments_l3w,
+                        (data["day"] == total_payments_l3w["total_pay_day"])\
+                        & (data["user_id"] == total_payments_l3w["total_pay_user_id"])\
+                        & (data["value_prop"] == total_payments_l3w["total_pay_value_prop"]),\
+                        "left")
+
+    data = data.selectExpr(
+        "day",
+        "user_id",
+        "value_prop",
+        "was_tapped",
+        "total_views_last_3_weeks",
+        "total_taps_last_3_weeks",
+        "number_payments_l3w",
+        "total_payments_last_3_weeks",
+    )
+    
+    # Write the data to a parquet file
+    data.write.parquet("output/prints_info.parquet")
 
 if __name__=='__main__':
     main()
