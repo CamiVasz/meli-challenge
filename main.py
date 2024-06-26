@@ -87,8 +87,24 @@ def get_last_three_weeks_views(prints, prints_lw):
     )
     return prints_l3w_views
 
-def get_three_weeks_taps(payments):
-    pass
+def get_three_weeks_taps(prints_lw, taps):
+    # Get total taps in the last 3 weeks
+    prints_l3w_taps = prints_lw.join(
+                        taps,
+                        (prints_lw["day"] > taps["tap_day"])
+                        & (taps["tap_day"] < date_sub(prints_lw["day"], 21))
+                        & (prints_lw["user_id"] == taps["tap_user_id"])
+                        & (prints_lw["value_prop"] == taps["tap_value_prop"]),
+                        "left",)\
+                    .withColumn("tap_last_3_weeks", col("tap_day").isNotNull().cast("int"))\
+                    .agroupBy(col("value_prop"), col("user_id"), col("day"))\
+                    .sum().selectExpr(
+                        "day as tap_l3w_day",
+                        "value_prop as tap_l3w_value_prop",
+                        "user_id as tap_l3w_user_id",
+                        "`sum(tap_last_3_weeks)` as total_taps_last_3_weeks",
+                    )
+    return prints_l3w_taps
     
 
 def main():
@@ -124,8 +140,9 @@ def main():
         "value_prop as pay_value_prop",
     )
     prints_lw = get_last_week(prints)
-    taps_lw = get_last_week_tapped(prints_lw, taps)
+    tapped_lw = get_last_week_tapped(prints_lw, taps)
     views_l3w = get_last_three_weeks_views(prints, prints_lw)
+    taps_l3w = get_three_weeks_taps(prints_lw, taps)
 
 if __name__=='__main__':
     main()
