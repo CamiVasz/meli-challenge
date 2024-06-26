@@ -40,7 +40,24 @@ def get_last_week(prints):
     return prints_lw
 
 def get_last_week_tapped(prints_lw):
-    pass
+    lw_taps = (
+        prints_lw.join(
+            taps,
+            (prints_lw["day"] == taps["tap_day"])
+            & (prints["user_id"] == taps["tap_user_id"])
+            & (prints["value_prop"] == taps["tap_value_prop"]),
+            "left",
+        )
+        .withColumn("tap_last_week", col("tap_day").isNotNull().cast("int"))
+        .groupBy(col("user_id"), col("value_prop"), col("day"))
+        .max()
+        .selectExpr(
+            "day as lw_taps_day",
+            "user_id as lw_taps_user_id",
+            "value_prop as lw_taps_value_prop",
+            "`max(tap_last_week)` as was_tapped",
+        )
+    )
 
 def main():
     # Create a SparkSession
@@ -75,6 +92,7 @@ def main():
         "value_prop as pay_value_prop",
     )
     prints_lw = get_last_week(prints)
+    taps_lw = get_last_week_tapped(prints_lw)
 
 if __name__=='__main__':
     main()
